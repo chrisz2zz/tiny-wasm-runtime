@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::binary::{
     instruction::Instruction,
     module::Module,
-    types::{ExportDesc, FuncType, ValueType},
+    types::{ExportDesc, FuncType, ImportDesc, ValueType},
 };
 use anyhow::{bail, Result};
 
@@ -20,8 +20,16 @@ pub struct InternalFuncInst {
 }
 
 #[derive(Debug, Clone)]
+pub struct ExternalFuncInst {
+    pub module: String,
+    pub func: String,
+    pub func_type: FuncType,
+}
+
+#[derive(Debug, Clone)]
 pub enum FuncInst {
     Internal(InternalFuncInst),
+    External(ExternalFuncInst),
 }
 
 #[derive(Debug)]
@@ -49,6 +57,33 @@ impl Store {
         };
 
         let mut funcs = vec![];
+
+        if let Some(ref import_section) = module.import_section {
+            for import in import_section {
+                let module_name = import.module.clone();
+                let field = import.field.clone();
+                let func_type = match import.desc {
+                    ImportDesc::Func(type_idx) => {
+                        let Some(ref func_types) = module.type_section else {
+                            bail!("not found type_section")
+                        };
+
+                        let Some(func_type) = func_types.get(type_idx as usize) else {
+                            bail!("not found func type in type_section")
+                        };
+
+                        func_type.clone()
+                    }
+                };
+
+                let func = FuncInst::External(ExternalFuncInst {
+                    module: module_name,
+                    func: field,
+                    func_type,
+                });
+                funcs.push(func);
+            }
+        }
 
         if let Some(ref code_section) = module.code_section {
             for (func_body, type_idx) in code_section.iter().zip(func_type_idxs.into_iter()) {
